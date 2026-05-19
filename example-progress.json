@@ -1,0 +1,30 @@
+{
+  "config": {
+    "workspace": ".",
+    "reviewEvery": 2,
+    "model": "gpt-5.5",
+    "sandbox": "danger-full-access",
+    "ephemeral": true
+  },
+  "steps": [
+    {
+      "id": "STEP-01",
+      "title": "Extract shared constants",
+      "done": false,
+      "prompt": "Implement phase 1 of the demo refactor plan in the current project.\nGoal: collect scattered gameplay constants, tuning values, colors, and UI strings into a shared config structure.\nKeep behavior unchanged and avoid broad renames."
+    },
+    {
+      "id": "STEP-02",
+      "title": "Isolate input handling",
+      "done": false,
+      "prompt": "Implement phase 2 of the demo refactor plan in the current project.\nGoal: isolate keyboard listeners, key state storage, and input queries behind a dedicated structure.\nKeep behavior unchanged and avoid unrelated refactors."
+    },
+    {
+      "id": "STEP-03",
+      "title": "Split main loop responsibilities",
+      "done": false,
+      "prompt": "Implement phase 3 of the demo refactor plan in the current project.\nGoal: clarify the boundaries between update, render, and state transition logic.\nPrefer small refactors and keep the current gameplay behavior."
+    }
+  ],
+  "reviewPrompt": "Review the current project and directly clean up issues where appropriate.\nIf you find temporary implementations, redundant implementations, or repeated logic, clean them up.\nIf you find obsolete code, remove it.\nPrefer low-risk, high-value cleanup and avoid large rewrites."
+}

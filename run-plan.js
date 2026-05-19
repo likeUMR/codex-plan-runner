@@ -94,7 +94,45 @@ function parseConfig(block) {
   return config;
 }
 
-function parsePlan(content) {
+function normalizePlanObject(plan) {
+  if (!plan || typeof plan !== "object") {
+    fail("Plan data must be an object");
+  }
+
+  const config = plan.config && typeof plan.config === "object" ? plan.config : {};
+  const reviewPrompt = typeof plan.reviewPrompt === "string" ? plan.reviewPrompt.trim() : "";
+  const rawSteps = Array.isArray(plan.steps) ? plan.steps : null;
+
+  if (!rawSteps || rawSteps.length === 0) {
+    fail("Plan must contain a non-empty `steps` array");
+  }
+
+  const steps = rawSteps.map((step, index) => {
+    if (!step || typeof step !== "object") {
+      fail(`Step at index ${index} must be an object`);
+    }
+    if (typeof step.id !== "string" || step.id.trim() === "") {
+      fail(`Step at index ${index} is missing a valid string \`id\``);
+    }
+    if (typeof step.title !== "string" || step.title.trim() === "") {
+      fail(`Step ${step.id} is missing a valid string \`title\``);
+    }
+    if (typeof step.prompt !== "string" || step.prompt.trim() === "") {
+      fail(`Step ${step.id} is missing a valid string \`prompt\``);
+    }
+
+    return {
+      done: Boolean(step.done),
+      id: step.id.trim(),
+      title: step.title.trim(),
+      prompt: step.prompt.trim(),
+    };
+  });
+
+  return { config, reviewPrompt, steps };
+}
+
+function parseMarkdownPlan(content) {
   const configMatch = content.match(/<!--\s*plan-config([\s\S]*?)-->/);
   const config = configMatch ? parseConfig(configMatch[1]) : {};
 
@@ -162,6 +200,25 @@ function parsePlan(content) {
   return { config, reviewPrompt, steps };
 }
 
+function parseJsonPlan(content) {
+  let plan;
+  try {
+    plan = JSON.parse(content);
+  } catch (error) {
+    fail(`Could not parse JSON plan: ${error.message}`);
+  }
+
+  return normalizePlanObject(plan);
+}
+
+function parsePlan(content, planPath) {
+  const ext = path.extname(planPath).toLowerCase();
+  if (ext === ".json") {
+    return parseJsonPlan(content);
+  }
+  return parseMarkdownPlan(content);
+}
+
 function formatConfigValue(value) {
   if (typeof value === "boolean") {
     return value ? "true" : "false";
@@ -175,6 +232,7 @@ function printPlanStatus({ planPath, workspace, parsed, maxSteps }) {
   const cadence = Number(parsed.config.reviewEvery || 2);
 
   console.log(`[plan-runner] Plan: ${planPath}`);
+  console.log(`[plan-runner] Format: ${path.extname(planPath).toLowerCase() === ".json" ? "json" : "markdown"}`);
   console.log(`[plan-runner] Workspace: ${workspace}`);
   console.log(`[plan-runner] Total steps: ${parsed.steps.length}`);
   console.log(`[plan-runner] Completed: ${completed}`);
@@ -203,6 +261,11 @@ function countCompleted(steps) {
 }
 
 function markStepComplete(planPath, stepId) {
+  if (path.extname(planPath).toLowerCase() === ".json") {
+    markJsonStepComplete(planPath, stepId);
+    return;
+  }
+
   const content = fs.readFileSync(planPath, "utf8");
   const updated = content.replace(
     new RegExp(`- \\[ \\] ${stepId}\\b`),
@@ -214,6 +277,27 @@ function markStepComplete(planPath, stepId) {
   }
 
   fs.writeFileSync(planPath, updated, "utf8");
+}
+
+function markJsonStepComplete(planPath, stepId) {
+  let plan;
+  try {
+    plan = JSON.parse(fs.readFileSync(planPath, "utf8"));
+  } catch (error) {
+    fail(`Could not parse JSON plan while marking completion: ${error.message}`);
+  }
+
+  if (!plan || !Array.isArray(plan.steps)) {
+    fail(`JSON plan ${planPath} does not contain a valid \`steps\` array`);
+  }
+
+  const step = plan.steps.find((entry) => entry && entry.id === stepId);
+  if (!step) {
+    fail(`Could not find ${stepId} in ${planPath}`);
+  }
+
+  step.done = true;
+  fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
 }
 
 function buildStepPrompt(step, planPath) {
@@ -338,7 +422,7 @@ function main() {
 
   const planDir = path.dirname(planPath);
   const content = fs.readFileSync(planPath, "utf8");
-  const parsed = parsePlan(content);
+  const parsed = parsePlan(content, planPath);
   const workspace = path.resolve(planDir, parsed.config.workspace || ".");
   const logsDir = path.join(planDir, "logs");
   ensureDir(logsDir);

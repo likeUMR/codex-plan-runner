@@ -28,6 +28,8 @@ After every configured number of completed steps, the runner opens a separate fr
   Main runner script
 - `example-progress.md`
   Example Markdown plan
+- `example-progress.json`
+  Example JSON plan
 - `logs/`
   Runtime output directory, created automatically and ignored by Git
 
@@ -55,12 +57,13 @@ Run against a custom plan file:
 
 ```powershell
 node run-plan.js --plan my-plan.md
+node run-plan.js --plan example-progress.json --status
 ```
 
 ## Command line options
 
 - `--plan <path>`
-  Path to the plan file. Default: `example-progress.md`
+  Path to the plan file. Supports `.md` and `.json`. Default: `example-progress.md`
 - `--dry-run`
   Do not call `codex`; only print what would be executed
 - `--status`
@@ -70,9 +73,18 @@ node run-plan.js --plan my-plan.md
 - `--timeout-ms <n>`
   Per-session timeout in milliseconds. Default: `1200000`
 
-## Plan file format
+## Plan file formats
 
-The runner expects a Markdown file with three parts:
+The runner currently supports:
+
+- Markdown plans: `.md`
+- JSON plans: `.json`
+
+Markdown is easier to edit by hand. JSON is more rigid and easier to generate or update programmatically.
+
+## Markdown format
+
+The Markdown runner format expects three parts:
 
 1. a `plan-config` HTML comment block
 2. a `## Steps` section
@@ -106,7 +118,7 @@ ephemeral: true
 Review the current project and directly clean up low-risk issues.
 ```
 
-## Format reference
+## Markdown reference
 
 ### 1. `plan-config`
 
@@ -176,11 +188,77 @@ This section is optional.
 
 If present, its contents are used as the base review prompt every time review cadence is reached. If omitted, the runner falls back to a built-in generic cleanup prompt.
 
+## JSON format
+
+JSON plans use a single object with:
+
+- `config`
+- `steps`
+- optional `reviewPrompt`
+
+Minimal example:
+
+```json
+{
+  "config": {
+    "workspace": ".",
+    "reviewEvery": 2,
+    "model": "gpt-5.5",
+    "sandbox": "danger-full-access",
+    "ephemeral": true
+  },
+  "steps": [
+    {
+      "id": "STEP-01",
+      "title": "Extract constants",
+      "done": false,
+      "prompt": "Implement phase 1 in the current project.\nGoal: collect repeated constants into a shared config module."
+    },
+    {
+      "id": "STEP-02",
+      "title": "Split input handling",
+      "done": false,
+      "prompt": "Implement phase 2 in the current project.\nGoal: isolate keyboard listeners and key state tracking."
+    }
+  ],
+  "reviewPrompt": "Review the current project and directly clean up low-risk issues."
+}
+```
+
+### JSON field reference
+
+#### `config`
+
+Supported keys are the same as the Markdown `plan-config` block:
+
+- `workspace`
+- `reviewEvery`
+- `model`
+- `sandbox`
+- `ephemeral`
+
+#### `steps`
+
+`steps` must be a non-empty array of objects with:
+
+- `id`
+  Required string
+- `title`
+  Required string
+- `prompt`
+  Required string
+- `done`
+  Optional boolean-like value; falsy means pending
+
+#### `reviewPrompt`
+
+Optional string. If omitted or empty, the runner uses the built-in fallback cleanup prompt.
+
 ## Execution logic
 
 The runner behaves like this:
 
-1. Parse the plan file
+1. Parse the plan file based on extension
 2. Resolve `workspace` relative to the plan file directory
 3. Find all unchecked steps
 4. Take up to `--max-steps` pending steps
@@ -198,6 +276,11 @@ This means:
 - implementation steps do not share conversation context
 - review steps do not share conversation context with implementation steps
 - plan progress is controlled outside the model
+
+When the runner marks a step complete:
+
+- Markdown plans are updated by replacing `- [ ] STEP-ID` with `- [x] STEP-ID`
+- JSON plans are updated by setting the matching step's `done` field to `true`
 
 ## Prompt augmentation
 
@@ -279,7 +362,13 @@ Why review runs in separate sessions:
 - cleanup prompts stay focused
 - review can be inserted at a fixed cadence instead of being mixed into every step
 
-Why Markdown instead of JSON:
+Why support both Markdown and JSON:
+
+- Markdown is easy to read and edit by hand
+- JSON is easier to generate and update from other tools
+- different teams prefer different authoring styles
+
+Why Markdown still remains the default:
 
 - easy to read and edit by hand
 - easy to commit and review in Git
@@ -288,6 +377,7 @@ Why Markdown instead of JSON:
 ## Limitations
 
 - Markdown parsing is intentionally simple and format-sensitive
+- JSON parsing is strict and expects the documented object shape
 - no built-in retry policy yet
 - no structured result schema yet
 - no automatic verification command pipeline yet
@@ -297,6 +387,6 @@ Why Markdown instead of JSON:
 
 - add retries with backoff
 - add optional verification commands after each step
-- support JSON or YAML plan formats
+- support YAML plan formats
 - support structured result extraction
 - support a quieter console mode
