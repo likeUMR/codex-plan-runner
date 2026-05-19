@@ -13,6 +13,7 @@ function parseArgs(argv) {
   const args = {
     plan: "example-progress.md",
     dryRun: false,
+    statusOnly: false,
     maxSteps: Number.MAX_SAFE_INTEGER,
     timeoutMs: 20 * 60 * 1000,
   };
@@ -21,6 +22,10 @@ function parseArgs(argv) {
     const value = argv[i];
     if (value === "--dry-run") {
       args.dryRun = true;
+      continue;
+    }
+    if (value === "--status") {
+      args.statusOnly = true;
       continue;
     }
     if (value === "--plan") {
@@ -57,9 +62,10 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log(`Usage:
-  node run-plan.js [--plan path] [--max-steps N] [--timeout-ms N] [--dry-run]
+  node run-plan.js [--plan path] [--max-steps N] [--timeout-ms N] [--dry-run] [--status]
 
 Examples:
+  node run-plan.js --status
   node run-plan.js --dry-run
   node run-plan.js --max-steps 1
   node run-plan.js --max-steps 1 --timeout-ms 600000
@@ -154,6 +160,42 @@ function parsePlan(content) {
   }
 
   return { config, reviewPrompt, steps };
+}
+
+function formatConfigValue(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
+}
+
+function printPlanStatus({ planPath, workspace, parsed, maxSteps }) {
+  const completed = countCompleted(parsed.steps);
+  const pending = parsed.steps.filter((step) => !step.done);
+  const cadence = Number(parsed.config.reviewEvery || 2);
+
+  console.log(`[plan-runner] Plan: ${planPath}`);
+  console.log(`[plan-runner] Workspace: ${workspace}`);
+  console.log(`[plan-runner] Total steps: ${parsed.steps.length}`);
+  console.log(`[plan-runner] Completed: ${completed}`);
+  console.log(`[plan-runner] Pending: ${pending.length}`);
+  console.log(`[plan-runner] Review cadence: every ${cadence} step(s)`);
+
+  if (Object.keys(parsed.config).length > 0) {
+    console.log("[plan-runner] Config:");
+    for (const [key, value] of Object.entries(parsed.config)) {
+      console.log(`  - ${key}: ${formatConfigValue(value)}`);
+    }
+  }
+
+  console.log("[plan-runner] Next steps:");
+  for (const step of pending.slice(0, maxSteps)) {
+    console.log(`  - ${step.id}: ${step.title}`);
+  }
+
+  if (!parsed.reviewPrompt) {
+    console.log("[plan-runner] Review prompt: not defined, built-in fallback will be used");
+  }
 }
 
 function countCompleted(steps) {
@@ -300,6 +342,16 @@ function main() {
   const workspace = path.resolve(planDir, parsed.config.workspace || ".");
   const logsDir = path.join(planDir, "logs");
   ensureDir(logsDir);
+
+  if (args.statusOnly) {
+    printPlanStatus({
+      planPath,
+      workspace,
+      parsed,
+      maxSteps: args.maxSteps,
+    });
+    return;
+  }
 
   let completed = countCompleted(parsed.steps);
   const pendingSteps = parsed.steps.filter((step) => !step.done).slice(0, args.maxSteps);
